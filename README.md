@@ -63,9 +63,9 @@ Clipped to $[0.50,\ 1.80]$.
 
 ### 4. Fixture expected goals
 
-For home $i$ vs. away $j$ (xG version shown; goals version is identical with $\bar{\lambda}_G$ and $H_G$):
+For home $i$ vs. away $j$ (xG version shown; goals version is identical with $\bar{\lambda}_G$, $H_G$, $\text{hf}_i^G$):
 
-$$\lambda_{H}^{xG} = \bar{\lambda}_{xG} \cdot \alpha_i \cdot \delta_j \cdot H_{xG}$$
+$$\lambda_{H}^{xG} = \bar{\lambda}_{xG} \cdot \alpha_i \cdot \delta_j \cdot H_{xG} \cdot \text{hf}_i^{xG}$$
 
 $$\lambda_{A}^{xG} = \bar{\lambda}_{xG} \cdot \alpha_j \cdot \delta_i$$
 
@@ -75,7 +75,15 @@ $$\lambda = 0.70\,\lambda^{xG} + 0.30\,\lambda^{goals}$$
 
 Floored at $0.15$.
 
-**Unrated opponents.** When one team is not in the model's rating table (typical for a lower-division cup side), the app substitutes the neutral fallback $\alpha = \delta = 1.0$ for the missing side so the equations still resolve. The resulting row is tagged UNRATED and its EV is not shown as actionable.
+**Team-specific home lift.** $H_{xG}$ is the league-wide home boost; $\text{hf}_i^{xG}$ is $i$'s own multiplier on top, computed from its ratio of home xG to away xG divided by the league's ratio, then shrunk toward 1.0 with $k = 20$ matches and clipped to $[0.70,\ 1.40]$. Bilbao's hf $\approx 1.08$, Barcelona's $\approx 0.96$ — Barcelona's away games are strong enough that their marginal home boost is smaller than average.
+
+**Rest & fixture-congestion adjustment.** After the lambda is computed it is trimmed to reflect fatigue:
+
+$$\lambda \leftarrow \lambda - 0.03 \cdot \max(0,\ 4 - \text{rest days}) - 0.10 \cdot \mathbb{1}[\text{played UCL/UEL in last 4 days}]$$
+
+Rest days come from openfootball's La Liga Primera + Segunda schedules. UCL/UEL data is pulled if available; when it isn't, the Euro flag simply stays False and only the rest-days term fires.
+
+**Unrated opponents.** When one team is not in the model's rating table (typical for a lower-division cup side), the app substitutes the neutral fallback $\alpha = \delta = \text{hf} = 1.0$ for the missing side so the equations still resolve. The resulting row is tagged UNRATED and its EV is not shown as actionable.
 
 ### 5. Score matrix
 
@@ -132,7 +140,8 @@ Recommended stake = $f^{\star}/4$ (quarter-Kelly). The app shows this as **Kelly
 
 ```
 openfootball es.1 (Primera) + es.2 (Segunda) ─┐
-Understat xG (Primera only)                    ├─→ team strengths + rosters ──→ snapshot/*.json  (committed)
+openfootball cl / el (Euro fixtures)           ├─→ strengths + rosters + fixture context ──→ snapshot/*.json  (committed)
+Understat xG (Primera only)                    │
 football-data.co.uk odds (Primera)             ─┘
 
 You upload MWOS PDF
@@ -140,14 +149,20 @@ You upload MWOS PDF
         ▼
 parse fixtures + 10 markets (filter to Spanish football via known-teams roster)
         │
-        ├── both teams rated ──→ Poisson score matrix ──→ model probs
-        │                                                      │
-        │       MWOS line ─── de-vig ──→ market probs ─────────┤
-        │                                                      ▼
-        │                                          blend (w=0.35)
-        │                                                      │
-        │                                                      ▼
-        │                                  EV vs MWOS odds ──→ flagged bets
+        ├── both teams rated ──→ lookup rest / UCL midweek from fixture context
+        │                            │
+        │                            ▼
+        │            Poisson score matrix (λ adjusted for fatigue & team home-lift)
+        │                            │
+        │                            ▼
+        │                        model probs
+        │                            │
+        │       MWOS line ─── de-vig ─┤
+        │                             ▼
+        │                    blend (w=0.35)
+        │                            │
+        │                            ▼
+        │              EV vs MWOS odds ──→ flagged bets
         │
         └── unrated opponent → shown separately (UNRATED), no EV computed
 ```
@@ -164,11 +179,11 @@ parse fixtures + 10 markets (filter to Spanish football via known-teams roster)
 
 ### How the website behaves
 
-1. **On load** — reads the committed snapshot (`strengths.json`, `recent_teams.json`, `known_teams.json`, `meta.json`, ~15 KB total) into memory. Shows four counters at the top: played matches, xG matched, historical odds matched, and **Teams (rated / known)** — the rated count is teams the model can score; the known count is teams the parser will accept from the PDF (Primera + Segunda historical rosters).
+1. **On load** — reads the committed snapshot (`strengths.json`, `recent_teams.json`, `known_teams.json`, `fixture_context.json`, `meta.json`, ~30 KB total) into memory. Shows four counters at the top: played matches, xG matched, historical odds matched, and **Teams (rated / known)** — the rated count is teams the model can score; the known count is teams the parser will accept from the PDF.
 2. **You upload a PDF** — file uploads to the Streamlit server (capped at 20 MB in `.streamlit/config.toml`).
 3. **Parse** (~2 s) — `mwos_pdf.py` scans every line, keeps fixtures where both teams are in the known-teams roster (drops other leagues in the PDF), and pulls the 10 odds columns.
-4. **Score** (~1 s) — model runs on rated fixtures; for cup fixtures with an unrated opponent, league-average fallback ratings are used and the row is marked UNRATED. Model + de-vigged MWOS get blended and EV per market is computed.
-5. **Render** — banner if unrated fixtures are present, table of parsed fixtures, summary metrics (Flagged / STRONG / BUY / MARGINAL / Unrated cup), per-fixture expandable cards listing value-bet markets, a dedicated "Unrated cup fixtures" section, and download buttons for the CSVs and text report.
+4. **Score** (~1 s) — for each fixture, `snapshot_loader.context_for()` looks up each team's rest days, matches-in-14d, and UCL/UEL-midweek flag from the fixture context. λ is adjusted for fatigue and per-team home lift, then the model runs. For cup fixtures with an unrated opponent, league-average fallback ratings are used and the row is marked UNRATED. Model + de-vigged MWOS get blended and EV per market is computed.
+5. **Render** — banner if unrated fixtures are present, table of parsed fixtures, summary metrics (Flagged / STRONG / BUY / MARGINAL / Unrated cup), per-fixture expandable cards showing rest days & congestion inline, listing value-bet markets, a dedicated "Unrated cup fixtures" section, and download buttons for the CSVs and text report.
 
 ### What you can adjust on the website
 
@@ -218,10 +233,12 @@ Cup / UNRATED fixtures are not in the backtest because there's no equivalent his
 ```
 webapp.py              Streamlit entry point (Cloud)
 snapshot_loader.py     loads precomputed team strengths + rosters
-snapshot/              committed model state (~15 KB total)
-  strengths.json         per-team attack/defense multipliers        (rated ~34 teams)
-  recent_teams.json      teams with enough recent top-flight data    (~23 teams)
-  known_teams.json       Primera + Segunda historical roster         (~71 teams)
+snapshot/              committed model state (~30 KB total)
+  strengths.json         per-team attack/defense + home-factor multipliers (~36 teams)
+  recent_teams.json      teams with enough recent top-flight data           (~23 teams)
+  known_teams.json       Primera + Segunda historical roster                (~73 teams)
+  fixture_context.json   per-team recent + upcoming matches (60d back / 21d ahead)
+                         for rest days, congestion count, and UCL/UEL flag
   meta.json              generation timestamp + counts
 
 config.py              constants (half-life, blend weight, floors)
@@ -270,7 +287,7 @@ git push                     # Streamlit Cloud redeploys automatically
 ## Limitations and caveats
 
 - **Ratings are Primera-quality only.** The model has full attack/defense ratings for teams that have played recent Primera football. Cup fixtures (Copa del Rey, Supercopa) featuring lower-division opponents are still parsed and shown, but flagged ⚪ **UNRATED** — the app falls back to league-average multipliers for the missing side so you can see the market but not the EV. Do not stake on UNRATED rows.
-- **No injuries, lineups, weather, ref, motivation, or travel.** The closing line encodes all of these; the model does not.
+- **Rest and UCL/UEL fatigue are modeled** (small −0.03 to −0.12 goals adjustment); injuries, lineups, weather, ref, motivation, and travel distance are **not**. The closing line encodes all of these; the model does not.
 - **No live/in-play.** The PDF is a snapshot; odds move.
 - **Understat xG only covers Primera.** Segunda teams that later appear as cup opponents have no xG history. Rated Primera clubs playing in cups still get their full ratings from Understat + goals.
 - **Understat needs Chrome.** Only runs during local `precompute.py`, never on Cloud.

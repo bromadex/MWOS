@@ -13,7 +13,7 @@ LEAGUE = "la-liga"
 OPENFOOTBALL_REPO = "https://raw.githubusercontent.com/openfootball/football.json/master"
 UNDERSTAT_LEAGUE = "La_liga"
 FIRST_XG_SEASON = 2014
-CURRENT_SEASON = 2025
+CURRENT_SEASON = 2026
 
 RECENCY_HALF_LIFE_DAYS = 540
 SHRINKAGE_MATCHES = 8.0

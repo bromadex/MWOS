@@ -23,8 +23,8 @@ st.set_page_config(
 def _load_context():
     snap = load_snapshot()
     if snap is not None:
-        strengths, recent_teams, known_teams, meta = snap
-        return strengths, recent_teams, known_teams, meta, "snapshot"
+        strengths, recent_teams, known_teams, fixture_context, meta = snap
+        return strengths, recent_teams, known_teams, fixture_context, meta, "snapshot"
 
     from data import all_spanish_team_names, build_matches, split_completed_upcoming
     from ratings import compute_team_strengths, recent_top_flight_teams
@@ -45,7 +45,7 @@ def _load_context():
         "n_teams_recent": len(recent_teams),
         "n_teams_known": len(known_teams),
     }
-    return strengths, recent_teams, known_teams, meta, "live"
+    return strengths, recent_teams, known_teams, {}, meta, "live"
 
 
 def _tier_color(sig: str) -> str:
@@ -82,7 +82,7 @@ with st.sidebar:
     st.divider()
     st.caption("Kelly/4 stake = quarter-Kelly. Multiply by bankroll to size each bet.")
 
-strengths, recent_teams_snapshot, known_teams_snapshot, meta, mode = _load_context()
+strengths, recent_teams_snapshot, known_teams_snapshot, fixture_context, meta, mode = _load_context()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Played matches", f"{meta.get('played_matches', 0):,}")
@@ -144,7 +144,13 @@ st.dataframe(
 )
 
 with st.spinner("Computing blended probabilities and edges…"):
-    edges = compute_market_edges(fx, strengths, min_ev=float(min_ev), blend_weight=float(blend))
+    edges = compute_market_edges(
+        fx,
+        strengths,
+        min_ev=float(min_ev),
+        blend_weight=float(blend),
+        fixture_context=fixture_context,
+    )
 
 if edges.empty:
     st.warning("No markets scored — nothing to bet.")
@@ -170,10 +176,31 @@ if keep.empty:
 else:
     _tier_icon = {"STRONG": "🟢 STRONG", "BUY": "🔵 BUY", "MARGINAL": "🟡 MARGINAL", "SKIP": "⚪ SKIP", "UNRATED": "⚪ UNRATED"}
 
+    def _rest_badge(row) -> str:
+        parts = []
+        for tag, team in (("H", row["home"]), ("A", row["away"])):
+            rd = row.get(f"{'home' if tag=='H' else 'away'}_rest_days")
+            euro = row.get(f"{'home' if tag=='H' else 'away'}_euro_midweek")
+            m14 = row.get(f"{'home' if tag=='H' else 'away'}_matches_14d")
+            bits = []
+            if rd is not None:
+                bits.append(f"{rd}d rest")
+            if m14:
+                bits.append(f"{m14} in 14d")
+            if euro:
+                bits.append("⚠️ UCL/UEL midweek")
+            if bits:
+                parts.append(f"{tag}: {', '.join(bits)}")
+        return "  ·  ".join(parts) if parts else ""
+
     for (d, k, h, a), grp in keep.groupby(["date", "kickoff", "home", "away"], sort=False):
         overround = grp["overround_1x2"].iloc[0]
         or_txt = f"  ·  MWOS 1X2 overround: {overround:+.1%}" if pd.notna(overround) else ""
-        with st.expander(f"**{d}  {k}   {h}  vs  {a}**{or_txt}", expanded=True):
+        rest_txt = _rest_badge(grp.iloc[0])
+        subtitle = f"{or_txt}"
+        with st.expander(f"**{d}  {k}   {h}  vs  {a}**{subtitle}", expanded=True):
+            if rest_txt:
+                st.caption(rest_txt)
             display = grp[["market", "mwos_odds", "p_blend", "p_model", "ev_per_unit", "kelly_quarter", "signal"]].copy()
             display["mwos_odds"] = display["mwos_odds"].map(lambda v: f"{v:.2f}")
             display["p_blend"] = display["p_blend"].map(lambda v: f"{v*100:.1f}%")

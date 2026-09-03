@@ -108,7 +108,13 @@ def _run_mwos(pdf_path: str, min_ev: float, min_recent: int, window_days: int, b
     print(f"      fixtures -> {fx_dest}")
 
     print(f"[4/4] blending model with de-vigged MWOS (w_model={blend:.2f}) and scoring markets...")
-    edges = compute_market_edges(fx, strengths, min_ev=min_ev, blend_weight=blend)
+    try:
+        from snapshot_loader import load_snapshot
+        snap = load_snapshot()
+        fixture_context = snap[3] if snap else {}
+    except Exception:
+        fixture_context = {}
+    edges = compute_market_edges(fx, strengths, min_ev=min_ev, blend_weight=blend, fixture_context=fixture_context)
     if edges.empty:
         print("no bets produced")
         return

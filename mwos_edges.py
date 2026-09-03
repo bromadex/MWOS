@@ -70,6 +70,7 @@ def compute_market_edges(
     strengths: dict,
     min_ev: float = 0.02,
     blend_weight: float = MODEL_BLEND_WEIGHT,
+    fixture_context: dict | None = None,
 ) -> pd.DataFrame:
     """
     For each parsed MWOS fixture, run the model, blend with de-vigged MWOS odds,
@@ -80,8 +81,14 @@ def compute_market_edges(
     rows = []
     for _, r in fx.iterrows():
         patched, home_rated, away_rated = _ensure_teams(strengths, r["home"], r["away"])
+
+        ctx = None
+        if fixture_context:
+            from snapshot_loader import context_for
+            ctx = context_for(fixture_context, r["home"], r["away"], r["date"])
+
         try:
-            pred = predict_fixture(r["home"], r["away"], patched)
+            pred = predict_fixture(r["home"], r["away"], patched, context=ctx)
         except KeyError:
             continue
         both_rated = home_rated and away_rated
@@ -146,6 +153,12 @@ def compute_market_edges(
                     "home_rated": home_rated,
                     "away_rated": away_rated,
                     "both_rated": both_rated,
+                    "home_rest_days": (ctx or {}).get("home_rest_days"),
+                    "away_rest_days": (ctx or {}).get("away_rest_days"),
+                    "home_euro_midweek": bool((ctx or {}).get("home_euro_midweek")),
+                    "away_euro_midweek": bool((ctx or {}).get("away_euro_midweek")),
+                    "home_matches_14d": (ctx or {}).get("home_matches_14d"),
+                    "away_matches_14d": (ctx or {}).get("away_matches_14d"),
                 }
             )
 

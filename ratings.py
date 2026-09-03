@@ -110,6 +110,8 @@ def compute_team_strengths(
     teams = sorted(long_df["team"].dropna().unique())
     strengths = {}
 
+    HOME_FACTOR_SHRINKAGE = 20.0  # matches; heavier shrinkage since home split is noisier
+
     for team in teams:
         t = long_df[long_df["team"] == team]
         w = t["w"].to_numpy()
@@ -136,11 +138,48 @@ def compute_team_strengths(
             att_xg_raw = att_g_raw
             def_xg_raw = def_g_raw
 
+        # Per-team home lift factor: how much bigger THIS team's home boost is
+        # than the league average. Ratio-of-ratios shrunk toward 1.0.
+        home_only = t[t["venue"] == "H"]
+        away_only = t[t["venue"] == "A"]
+        wh = home_only["w"].to_numpy()
+        wa = away_only["w"].to_numpy()
+        wh_sum, wa_sum = wh.sum(), wa.sum()
+
+        if wh_sum > 0 and wa_sum > 0:
+            gf_h = (wh * home_only["gf"].to_numpy()).sum() / wh_sum
+            gf_a = (wa * away_only["gf"].to_numpy()).sum() / wa_sum
+            h_i_g = gf_h / max(gf_a, 1e-6)
+            hf_g_raw = h_i_g / max(home_adv_goals, 1e-6)
+
+            xgf_h = home_only["xgf"].to_numpy()
+            xgf_a = away_only["xgf"].to_numpy()
+            mh = ~np.isnan(xgf_h)
+            ma = ~np.isnan(xgf_a)
+            if mh.sum() > 0 and ma.sum() > 0:
+                xgf_h_mean = (wh[mh] * xgf_h[mh]).sum() / max(wh[mh].sum(), 1e-6)
+                xgf_a_mean = (wa[ma] * xgf_a[ma]).sum() / max(wa[ma].sum(), 1e-6)
+                h_i_xg = xgf_h_mean / max(xgf_a_mean, 1e-6)
+                hf_xg_raw = h_i_xg / max(home_adv_xg, 1e-6)
+            else:
+                hf_xg_raw = hf_g_raw
+
+            eff = min(wh_sum, wa_sum)
+            hf_g = (hf_g_raw * eff + 1.0 * HOME_FACTOR_SHRINKAGE) / (eff + HOME_FACTOR_SHRINKAGE)
+            hf_xg = (hf_xg_raw * eff + 1.0 * HOME_FACTOR_SHRINKAGE) / (eff + HOME_FACTOR_SHRINKAGE)
+            hf_g = float(np.clip(hf_g, 0.70, 1.40))
+            hf_xg = float(np.clip(hf_xg, 0.70, 1.40))
+        else:
+            hf_g = 1.0
+            hf_xg = 1.0
+
         strengths[team] = {
             "att_g": _cap(att_g_raw / league_mean_goals),
             "def_g": _cap(def_g_raw / league_mean_goals),
             "att_xg": _cap(att_xg_raw / league_mean_xg),
             "def_xg": _cap(def_xg_raw / league_mean_xg),
+            "hf_g": hf_g,
+            "hf_xg": hf_xg,
             "matches_eff": float(wsum),
         }
 

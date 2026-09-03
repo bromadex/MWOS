@@ -80,6 +80,26 @@ def fetch_openfootball(seasons: range) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def fetch_euro_fixtures(seasons: range) -> pd.DataFrame:
+    """Fetch Champions League + Europa League fixtures from openfootball.
+    Returns rows of (date, team, comp) — one row per team per fixture.
+    Missing seasons are silently skipped."""
+    rows = []
+    for div, tag in (("cl", "cl"), ("el", "el")):
+        for y in seasons:
+            df = _fetch_openfootball_season(y, division=div)
+            if df.empty:
+                continue
+            for _, r in df.iterrows():
+                if pd.isna(r["date"]):
+                    continue
+                for team_col in ("home", "away"):
+                    tname = normalize_team(r[team_col]) if isinstance(r[team_col], str) else None
+                    if tname:
+                        rows.append({"date": r["date"], "team": tname, "comp": tag})
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["date", "team", "comp"])
+
+
 def all_spanish_team_names(seasons: range) -> set[str]:
     """
     Union of every team name that has appeared in La Liga Primera (es.1) or

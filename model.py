@@ -10,7 +10,22 @@ from config import (
 )
 
 
-def fixture_lambdas(home: str, away: str, strengths: dict) -> tuple[float, float]:
+def fixture_lambdas(
+    home: str,
+    away: str,
+    strengths: dict,
+    context: dict | None = None,
+) -> tuple[float, float]:
+    """Expected goals for the home and away side.
+
+    `context` is an optional per-fixture dict with fatigue/rest adjustments:
+      {
+        "home_rest_days": int,   # days since home team's last competitive match
+        "away_rest_days": int,
+        "home_euro_midweek": bool, # played CL/EL in the 4 days before
+        "away_euro_midweek": bool,
+      }
+    """
     teams = strengths["teams"]
     if home not in teams or away not in teams:
         raise KeyError(f"missing team in strengths: {home} / {away}")
@@ -18,15 +33,42 @@ def fixture_lambdas(home: str, away: str, strengths: dict) -> tuple[float, float
     h = teams[home]
     a = teams[away]
 
-    lam_h_xg = strengths["league_mean_xg"] * h["att_xg"] * a["def_xg"] * strengths["home_adv_xg"]
+    # Per-team home lift (shrunk toward league average = 1.0)
+    hf_g_home = h.get("hf_g", 1.0)
+    hf_xg_home = h.get("hf_xg", 1.0)
+
+    lam_h_xg = (
+        strengths["league_mean_xg"]
+        * h["att_xg"] * a["def_xg"]
+        * strengths["home_adv_xg"] * hf_xg_home
+    )
     lam_a_xg = strengths["league_mean_xg"] * a["att_xg"] * h["def_xg"]
-    lam_h_g = strengths["league_mean_goals"] * h["att_g"] * a["def_g"] * strengths["home_adv_goals"]
+    lam_h_g = (
+        strengths["league_mean_goals"]
+        * h["att_g"] * a["def_g"]
+        * strengths["home_adv_goals"] * hf_g_home
+    )
     lam_a_g = strengths["league_mean_goals"] * a["att_g"] * h["def_g"]
 
     lam_h = XG_LAMBDA_WEIGHT * lam_h_xg + (1 - XG_LAMBDA_WEIGHT) * lam_h_g
     lam_a = XG_LAMBDA_WEIGHT * lam_a_xg + (1 - XG_LAMBDA_WEIGHT) * lam_a_g
 
+    if context:
+        lam_h = _apply_context(lam_h, context.get("home_rest_days"), context.get("home_euro_midweek"))
+        lam_a = _apply_context(lam_a, context.get("away_rest_days"), context.get("away_euro_midweek"))
+
     return max(lam_h, MIN_EXPECTED_GOALS), max(lam_a, MIN_EXPECTED_GOALS)
+
+
+def _apply_context(lam: float, rest_days: int | None, euro_midweek: bool | None) -> float:
+    """Rest / fixture-congestion adjustment. Subtract 0.03 goals per day of rest
+    below 4, and 0.10 goals if the side played a UCL/UEL fixture in the last
+    4 days."""
+    if rest_days is not None and rest_days < 4:
+        lam -= 0.03 * (4 - rest_days)
+    if euro_midweek:
+        lam -= 0.10
+    return lam
 
 
 def _dixon_coles_tau(k: int, l: int, lam_h: float, lam_a: float, rho: float) -> float:
@@ -87,8 +129,14 @@ def market_probabilities(m: np.ndarray) -> dict:
     }
 
 
-def predict_fixture(home: str, away: str, strengths: dict, rho: float = 0.008) -> dict:
-    lam_h, lam_a = fixture_lambdas(home, away, strengths)
+def predict_fixture(
+    home: str,
+    away: str,
+    strengths: dict,
+    rho: float = 0.008,
+    context: dict | None = None,
+) -> dict:
+    lam_h, lam_a = fixture_lambdas(home, away, strengths, context=context)
     m = score_matrix(lam_h, lam_a, rho)
     mp = market_probabilities(m)
     return {
