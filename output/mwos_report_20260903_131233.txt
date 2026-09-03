@@ -1,0 +1,51 @@
+========================================================================================
+MWOS DAILY VALUE-BET REPORT   (blend w_model = 0.75, min EV = +2.0%)
+========================================================================================
+
+2026-09-03  21:00   Real Sociedad  vs  Celta Vigo
+   MWOS 1X2 overround: +5.0%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   AWAY (2)     3.95     27.6%     28.7%   +8.91%    0.76%  STRONG
+   Over 2.5     1.84     59.1%     62.0%   +8.74%    2.60%  STRONG
+   BTTS Yes     1.73     60.1%     62.5%   +4.00%    1.37%  BUY
+
+2026-09-04  20:30   Las Palmas  vs  Leganes
+   MWOS 1X2 overround: +11.0%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   AWAY (2)     4.00     28.7%     30.7%  +14.71%    1.23%  STRONG
+   Over 2.5     2.02     51.9%     53.8%   +4.76%    1.17%  BUY
+   BTTS Yes     1.87     54.8%     56.7%   +2.42%    0.70%  MARGINAL
+
+2026-09-04  21:00   Real Betis  vs  Real Madrid
+   MWOS 1X2 overround: +5.5%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   HOME (1)     7.00     23.2%     26.4%  +62.36%    2.60%  STRONG
+   1X           2.70     44.4%     48.6%  +19.89%    2.92%  STRONG
+   DRAW (X)     5.20     21.2%     22.2%  +10.29%    0.61%  STRONG
+   Under 2.5    2.90     36.4%     37.9%   +5.58%    0.73%  BUY
+
+2026-09-05  16:15   Bilbao  vs  Atletico
+   MWOS 1X2 overround: +4.9%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   HOME (1)     3.00     40.6%     43.5%  +21.79%    2.72%  STRONG
+   Over 2.5     1.86     56.9%     59.2%   +5.78%    1.68%  BUY
+
+2026-09-06  16:15   Valencia  vs  Barcelona
+   MWOS 1X2 overround: +4.8%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   HOME (1)     9.00     20.8%     24.2%  +87.35%    2.73%  STRONG
+   1X           3.25     40.3%     45.0%  +30.89%    3.43%  STRONG
+   DRAW (X)     6.20     19.5%     20.8%  +20.63%    0.99%  STRONG
+   BTTS Yes     1.68     62.2%     64.7%   +4.48%    1.65%  BUY
+
+2026-09-06  18:30   Alaves  vs  Osasuna
+   MWOS 1X2 overround: +4.7%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   Over 2.5     2.42     47.6%     50.7%  +15.28%    2.69%  STRONG
+   BTTS Yes     2.05     51.5%     53.8%   +5.59%    1.33%  BUY
+   HOME (1)     2.30     45.5%     46.8%   +4.60%    0.89%  BUY
+
+----------------------------------------------------------------------------------------
+summary: 11 STRONG, 7 BUY, 1 MARGINAL
+staking guide: use KELLY/4 as the fraction of bankroll per bet. never chase.
+

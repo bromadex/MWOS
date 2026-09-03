@@ -1,0 +1,36 @@
+========================================================================================
+MWOS DAILY VALUE-BET REPORT   (blend w_model = 1.00, min EV = +20.0%)
+========================================================================================
+
+2026-09-04  20:30   Las Palmas  vs  Leganes
+   MWOS 1X2 overround: +11.0%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   AWAY (2)     4.00     30.7%     30.7%  +22.92%    1.91%  STRONG
+
+2026-09-04  21:00   Real Betis  vs  Real Madrid
+   MWOS 1X2 overround: +5.5%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   HOME (1)     7.00     26.4%     26.4%  +84.87%    3.54%  STRONG
+   1X           2.70     48.6%     48.6%  +31.25%    4.60%  STRONG
+
+2026-09-05  16:15   Bilbao  vs  Atletico
+   MWOS 1X2 overround: +4.9%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   HOME (1)     3.00     43.5%     43.5%  +30.62%    3.83%  STRONG
+
+2026-09-06  16:15   Valencia  vs  Barcelona
+   MWOS 1X2 overround: +4.8%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   HOME (1)     9.00     24.2%     24.2% +117.98%    3.69%  STRONG
+   1X           3.25     45.0%     45.0%  +46.35%    5.15%  STRONG
+   DRAW (X)     6.20     20.8%     20.8%  +29.02%    1.40%  STRONG
+
+2026-09-06  18:30   Alaves  vs  Osasuna
+   MWOS 1X2 overround: +4.7%
+   MARKET       ODDS   p_blend   p_model       EV   KELLY/4  SIGNAL
+   Over 2.5     2.42     50.7%     50.7%  +22.72%    4.00%  STRONG
+
+----------------------------------------------------------------------------------------
+summary: 8 STRONG, 0 BUY, 0 MARGINAL
+staking guide: use KELLY/4 as the fraction of bankroll per bet. never chase.
+

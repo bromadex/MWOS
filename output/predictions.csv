@@ -1,0 +1,11 @@
+date,home,away,lambda_h,lambda_a,p_home,p_draw,p_away,over_2_5,btts,most_likely_score
+2025-05-23,Real Betis,Valencia CF,1.971,1.159,0.563,0.2158,0.2212,0.6052,0.5897,1-1
+2025-05-24,Real Madrid CF,Real Sociedad de Fútbol,2.619,0.955,0.73,0.1552,0.1147,0.6926,0.5698,2-0
+2025-05-24,CD Leganés,Real Valladolid CF,2.072,0.977,0.6269,0.2028,0.1703,0.5878,0.5444,2-0
+2025-05-24,RCD Espanyol de Barcelona,UD Las Palmas,1.674,1.165,0.4936,0.24,0.2665,0.5397,0.5581,1-1
+2025-05-24,Alaves,CA Osasuna,1.482,1.235,0.4302,0.253,0.3168,0.5106,0.5471,1-1
+2025-05-24,Getafe CF,RC Celta de Vigo,1.313,1.151,0.4041,0.2692,0.3267,0.4469,0.4988,1-1
+2025-05-24,Rayo Vallecano de Madrid,RCD Mallorca,1.46,1.027,0.4721,0.2612,0.2668,0.4528,0.4917,1-1
+2025-05-25,Girona,Club Atlético de Madrid,1.437,1.778,0.3133,0.2285,0.4582,0.6233,0.6328,1-1
+2025-05-25,Villarreal,Sevilla,2.434,1.2,0.6459,0.1807,0.1734,0.7033,0.6369,2-1
+2025-05-25,Bilbao,Barcelona,1.304,1.994,0.2495,0.2153,0.5352,0.6401,0.6285,1-2
