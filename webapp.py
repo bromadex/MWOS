@@ -62,14 +62,26 @@ st.caption("Upload today's MWOS-DAILYFIXTURE PDF. The model runs, blends with th
 
 with st.sidebar:
     st.header("Settings")
+
     blend = st.slider(
         "Model weight in blend",
         min_value=0.0,
         max_value=1.0,
         value=MODEL_BLEND_WEIGHT,
         step=0.05,
-        help="0 = fully trust the market, 1 = fully trust the model. Backtest suggests 0.15–0.35.",
+        help="Blend weight for the model's probability vs. the de-vigged MWOS market probability. 0 = fully trust the market, 1 = fully trust the model. Backtest optimum ≈ 0; safe zone 0.15–0.35.",
     )
+    with st.expander("ℹ️ What is this?"):
+        st.markdown(
+            "The final probability the app uses is a **weighted average** of two things:\n\n"
+            "- **The model** — this app's Poisson goals model, built from openfootball + Understat xG.\n"
+            "- **The market** — MWOS's own odds, stripped of their vig, treated as an implied probability.\n\n"
+            "`p_final = w · p_model + (1 − w) · p_market`\n\n"
+            "**Lower w (e.g. 0.15)** = more market-anchored, safer, fewer fake edges.\n\n"
+            "**Higher w (e.g. 0.60)** = trust the model more; more bets flagged but they're riskier — "
+            "the backtest shows the pure model is ~3% worse than Pinnacle closing, so trusting it a lot is dangerous."
+        )
+
     min_ev = st.slider(
         "Minimum EV per unit",
         min_value=0.0,
@@ -77,9 +89,52 @@ with st.sidebar:
         value=0.02,
         step=0.01,
         format="%.2f",
+        help="Threshold to flag a bet as worth showing. EV per unit = model probability × MWOS odds − 1.",
     )
-    min_recent = st.number_input("Min recent matches per team (2y)", min_value=5, max_value=40, value=12)
+    with st.expander("ℹ️ What is EV?"):
+        st.markdown(
+            "**Expected value (EV) per 1 unit staked** — how much you'd profit on average if this exact bet "
+            "repeated many times, per $1 wagered.\n\n"
+            "`EV = p_final × decimal_odds − 1`\n\n"
+            "Example: MWOS offers 3.00 on a bet the app thinks has a 40% chance of winning. "
+            "EV = 0.40 × 3.00 − 1 = **+0.20**, i.e. +20¢ per $1 staked long-run.\n\n"
+            "**Raise the threshold** to hide small edges (0.05 = only serious ones). "
+            "**Lower it to 0** to see every positive-EV bet, including tiny ones."
+        )
+
+    min_recent = st.number_input(
+        "Min recent matches per team (2y)",
+        min_value=5,
+        max_value=40,
+        value=12,
+        help="Teams need at least this many matches in the last 2 years to be considered 'recent top-flight' — affects the recent-teams filter used when building the snapshot locally.",
+    )
+    with st.expander("ℹ️ What does this do?"):
+        st.markdown(
+            "Some La Liga clubs go down to Segunda, come back up, drop again. Their **rating ages fast**. "
+            "This threshold decides how many matches a team needs to have played in the top-flight window "
+            "(default: last 2 years) before we call it a 'recent top-flight' team.\n\n"
+            "It's baked into the snapshot when you run `precompute.py` locally, so changing it on the live "
+            "app doesn't retroactively re-rate teams — it's here for reference and for when you fork the repo.\n\n"
+            "**Effect:** more teams pass a low threshold (5) → more matches scored, but with older data. "
+            "A high threshold (20+) means only regulars, ratings you can lean on."
+        )
+
     st.divider()
+    with st.expander("📖 Signal legend", expanded=False):
+        st.markdown(
+            "Every scored market is tagged with one signal so you can scan quickly:\n\n"
+            "| Badge | Meaning | Trigger |\n"
+            "|---|---|---|\n"
+            "| 🟢 **STRONG** | Big edge, both teams rated | EV ≥ **8%** |\n"
+            "| 🔵 **BUY** | Solid edge, both teams rated | **4%** ≤ EV < 8% |\n"
+            "| 🟡 **MARGINAL** | Small edge, both teams rated | min-EV ≤ EV < 4% |\n"
+            "| ⚪ **UNRATED** | Cup fixture with a Segunda / lower-tier team the model can't rate | Either team missing from the ratings table |\n"
+            "| ⚪ **SKIP** | Below the min-EV threshold — not worth staking | Not shown in the value-bet list |\n\n"
+            "**Never stake on 🟢 or 🔵 blindly.** Even a real 8% edge dies if MWOS's overround is 11% on that market "
+            "and the model happens to be wrong on this fixture. Use Kelly/4 sizing, spread across many bets, "
+            "and never bet the same market twice hoping to correct."
+        )
     st.caption("Kelly/4 stake = quarter-Kelly. Multiply by bankroll to size each bet.")
 
 strengths, recent_teams_snapshot, known_teams_snapshot, fixture_context, meta, mode = _load_context()
@@ -167,6 +222,11 @@ s2.metric("STRONG", tiers.get("STRONG", 0))
 s3.metric("BUY", tiers.get("BUY", 0))
 s4.metric("MARGINAL", tiers.get("MARGINAL", 0))
 s5.metric("Unrated cup", unrated_edges.drop_duplicates(["date", "kickoff", "home", "away"]).shape[0])
+st.caption(
+    "🟢 **STRONG** = EV ≥ 8%   ·   🔵 **BUY** = EV ≥ 4%   ·   "
+    "🟡 **MARGINAL** = EV ≥ your min threshold   ·   ⚪ **UNRATED** = cup match, one team not rated — no EV trusted. "
+    "See sidebar → **Signal legend** for the full explanation."
+)
 
 st.divider()
 st.subheader("Value bets by fixture")
