@@ -154,6 +154,12 @@ else:
 
 st.divider()
 
+st.markdown(
+    "**Need today's PDF?** Grab it from MWOS → "
+    "[📥 Download MWOS daily fixtures](https://info.betting.co.zw/daily-fixture/)  "
+    "then drop it below."
+)
+
 uploaded = st.file_uploader(
     "Drop today's MWOS-DAILYFIXTURE PDF here",
     type=["pdf"],
