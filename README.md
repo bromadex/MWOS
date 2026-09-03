@@ -173,9 +173,16 @@ parse fixtures + 10 markets (filter to Spanish football via known-teams roster)
 
 - **URL:** https://mwos-bet.streamlit.app
 - **Hosting:** Streamlit Community Cloud (free tier). Backed by this GitHub repo — every commit to `main` auto-redeploys within ~60 seconds.
-- **State:** stateless. No accounts, no history, no data saved between sessions. Uploads live only in the current tab's memory.
-- **Cold start:** ~5 s (Streamlit spins the process up on first visit after idle).
+- **State:** stateless. No accounts, no history, no data saved between sessions. Uploads live only in the current tab's memory (`st.session_state`).
+- **Cold start:** ~5 s.
 - **Warm:** near-instant.
+
+### Pages
+
+The app is a **multi-page Streamlit app** (files under `pages/` become separate pages in the left nav):
+
+1. **⚽ Scanner** (`webapp.py`) — the default page. Upload the daily MWOS PDF, get every value bet flagged per fixture.
+2. **🎯 Bet Builder** (`pages/1_🎯_Bet_Builder.py`) — takes the Scanner's flagged edges and builds a $1-per-leg singles slip. Filters by min odds + min model probability, then computes the full portfolio distribution: expected P/L, standard deviation, Poisson-binomial P(k wins), worst-case P/L per k, and a "safe on k/N hits" verdict. Designed for the classic *"if I win 8 of 10, do I break even?"* question.
 
 ### How the website behaves
 
@@ -231,7 +238,10 @@ Cup / UNRATED fixtures are not in the backtest because there's no equivalent his
 ## Repo layout
 
 ```
-webapp.py              Streamlit entry point (Cloud)
+webapp.py              Streamlit entry point — Scanner page (Cloud)
+pages/                 Streamlit auto-picks these up as extra pages
+  1_🎯_Bet_Builder.py    singles-portfolio construction + stats
+portfolio.py           slip selection + Poisson-binomial P/L distribution
 snapshot_loader.py     loads precomputed team strengths + rosters
 snapshot/              committed model state (~30 KB total)
   strengths.json         per-team attack/defense + home-factor multipliers (~36 teams)

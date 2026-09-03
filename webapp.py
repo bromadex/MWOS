@@ -18,6 +18,8 @@ st.set_page_config(
     layout="wide",
 )
 
+st.sidebar.success("💡 Open the **Bet Builder** page (left nav) to turn today's edges into a $1-per-leg singles portfolio.")
+
 
 @st.cache_resource(show_spinner="Loading precomputed model snapshot…")
 def _load_context():
@@ -310,6 +312,11 @@ try:
     fx.to_csv(OUT_DIR / f"mwos_fixtures_{stamp}.csv", index=False)
 except OSError:
     pass
+
+# Stash for the Bet Builder page so it doesn't need to re-upload the PDF
+st.session_state["edges"] = edges
+st.session_state["upload_stamp"] = stamp
+st.session_state["upload_name"] = uploaded.name
 
 with st.expander("Text report"):
     st.code(report_txt, language="text")
