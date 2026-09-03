@@ -151,34 +151,21 @@ st.subheader("Value bets by fixture")
 if keep.empty:
     st.info("No fixture cleared the EV threshold. Lower the threshold or raise the model weight.")
 else:
+    _tier_icon = {"STRONG": "🟢 STRONG", "BUY": "🔵 BUY", "MARGINAL": "🟡 MARGINAL", "SKIP": "⚪ SKIP"}
+
     for (d, k, h, a), grp in keep.groupby(["date", "kickoff", "home", "away"], sort=False):
         overround = grp["overround_1x2"].iloc[0]
         or_txt = f"  ·  MWOS 1X2 overround: {overround:+.1%}" if pd.notna(overround) else ""
         with st.expander(f"**{d}  {k}   {h}  vs  {a}**{or_txt}", expanded=True):
             display = grp[["market", "mwos_odds", "p_blend", "p_model", "ev_per_unit", "kelly_quarter", "signal"]].copy()
-            display.rename(
-                columns={
-                    "market": "Market",
-                    "mwos_odds": "MWOS",
-                    "p_blend": "p_blend",
-                    "p_model": "p_model",
-                    "ev_per_unit": "EV",
-                    "kelly_quarter": "Kelly/4",
-                    "signal": "Signal",
-                },
-                inplace=True,
-            )
-
-            def _color_row(row):
-                c = _tier_color(row["Signal"])
-                return [f"background-color: {c}22; color: inherit"] * len(row)
-
-            styled = (
-                display.style
-                .apply(_color_row, axis=1)
-                .format({"MWOS": "{:.2f}", "p_blend": "{:.1%}", "p_model": "{:.1%}", "EV": "{:+.2%}", "Kelly/4": "{:.2%}"})
-            )
-            st.dataframe(styled, use_container_width=True, hide_index=True)
+            display["mwos_odds"] = display["mwos_odds"].map(lambda v: f"{v:.2f}")
+            display["p_blend"] = display["p_blend"].map(lambda v: f"{v*100:.1f}%")
+            display["p_model"] = display["p_model"].map(lambda v: f"{v*100:.1f}%")
+            display["ev_per_unit"] = display["ev_per_unit"].map(lambda v: f"{v*100:+.2f}%")
+            display["kelly_quarter"] = display["kelly_quarter"].map(lambda v: f"{v*100:.2f}%")
+            display["signal"] = display["signal"].map(lambda s: _tier_icon.get(s, s))
+            display.columns = ["Market", "MWOS", "p_blend", "p_model", "EV", "Kelly/4", "Signal"]
+            st.dataframe(display, use_container_width=True, hide_index=True)
 
 st.divider()
 st.subheader("Download full outputs")

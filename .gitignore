@@ -1,0 +1,25 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# secrets
+.env
+*.pem
+kalshi_private_key*
+
+# scraped / cached data (these are pulled by precompute.py)
+data/
+output/
+mwos_inbox/*.pdf
+
+# soccerdata's own cache lives in the user's home; leave alone
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
