@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import io
+from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from config import MODEL_BLEND_WEIGHT, MWOS_INBOX, OUT_DIR
+from mwos_edges import compute_market_edges, format_report
+from mwos_pdf import parse_pdf
+from snapshot_loader import load_snapshot
+
+st.set_page_config(
+    page_title="La Liga Value Bets — MWOS",
+    page_icon="⚽",
+    layout="wide",
+)
+
+
+@st.cache_resource(show_spinner="Loading precomputed model snapshot…")
+def _load_context():
+    snap = load_snapshot()
+    if snap is not None:
+        strengths, recent_teams, meta = snap
+        return strengths, recent_teams, meta, "snapshot"
+
+    from data import build_matches, split_completed_upcoming
+    from ratings import compute_team_strengths, recent_top_flight_teams
+
+    df = build_matches()
+    played, _ = split_completed_upcoming(df)
+    strengths = compute_team_strengths(played)
+    recent_teams = recent_top_flight_teams(played)
+    xg_matched = int(played["home_xg"].notna().sum()) if "home_xg" in played.columns else 0
+    mkt_matched = int(played["mkt_p_h"].notna().sum()) if "mkt_p_h" in played.columns else 0
+    meta = {
+        "played_matches": len(played),
+        "xg_matched": xg_matched,
+        "market_odds_matched": mkt_matched,
+        "n_teams": len(strengths["teams"]),
+    }
+    return strengths, recent_teams, meta, "live"
+
+
+def _tier_color(sig: str) -> str:
+    return {
+        "STRONG": "#0a7d0a",
+        "BUY": "#1e88e5",
+        "MARGINAL": "#f9a825",
+        "SKIP": "#9e9e9e",
+    }.get(sig, "#9e9e9e")
+
+
+st.title("⚽ La Liga Value-Bet Scanner")
+st.caption("Upload today's MWOS-DAILYFIXTURE PDF. The model runs, blends with the de-vigged MWOS line, and lists bets with positive EV.")
+
+with st.sidebar:
+    st.header("Settings")
+    blend = st.slider(
+        "Model weight in blend",
+        min_value=0.0,
+        max_value=1.0,
+        value=MODEL_BLEND_WEIGHT,
+        step=0.05,
+        help="0 = fully trust the market, 1 = fully trust the model. Backtest suggests 0.15–0.35.",
+    )
+    min_ev = st.slider(
+        "Minimum EV per unit",
+        min_value=0.0,
+        max_value=0.20,
+        value=0.02,
+        step=0.01,
+        format="%.2f",
+    )
+    min_recent = st.number_input("Min recent matches per team (2y)", min_value=5, max_value=40, value=12)
+    st.divider()
+    st.caption("Kelly/4 stake = quarter-Kelly. Multiply by bankroll to size each bet.")
+
+strengths, recent_teams_snapshot, meta, mode = _load_context()
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Played matches", f"{meta.get('played_matches', 0):,}")
+c2.metric("xG matched", f"{meta.get('xg_matched', 0):,}")
+c3.metric("Historical odds matched", f"{meta.get('market_odds_matched', 0):,}")
+c4.metric("Teams", meta.get("n_teams", 0))
+if mode == "snapshot" and "generated_at" in meta:
+    st.caption(f"Data snapshot generated at {meta['generated_at']} UTC. Run `python precompute.py` locally to refresh.")
+else:
+    st.caption("Running with a live data fetch (no snapshot committed).")
+
+st.divider()
+
+uploaded = st.file_uploader(
+    "Drop today's MWOS-DAILYFIXTURE PDF here",
+    type=["pdf"],
+    accept_multiple_files=False,
+)
+
+if uploaded is None:
+    st.info("Waiting for a PDF. Downloaded PDFs are copied to `mwos_inbox/` and processed.")
+    st.stop()
+
+stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+try:
+    pdf_dest = MWOS_INBOX / f"upload_{stamp}_{uploaded.name}"
+    pdf_dest.write_bytes(uploaded.getvalue())
+except OSError:
+    import tempfile
+    pdf_dest = Path(tempfile.gettempdir()) / f"upload_{stamp}_{uploaded.name}"
+    pdf_dest.write_bytes(uploaded.getvalue())
+st.success(f"Received {uploaded.name}")
+
+recent_teams = recent_teams_snapshot
+
+with st.spinner("Parsing PDF and matching La Liga fixtures…"):
+    fx = parse_pdf(str(pdf_dest), recent_teams)
+
+if fx.empty:
+    st.warning("No La Liga fixtures with recognised teams were found in this PDF.")
+    st.stop()
+
+st.subheader(f"Parsed fixtures ({len(fx)})")
+st.dataframe(
+    fx[["date", "kickoff", "home", "away", "home_odds", "draw_odds", "away_odds",
+        "odds_1x", "odds_12", "odds_x2", "odds_under25", "odds_over25", "odds_gg", "odds_ng"]],
+    use_container_width=True,
+    hide_index=True,
+)
+
+with st.spinner("Computing blended probabilities and edges…"):
+    edges = compute_market_edges(fx, strengths, min_ev=float(min_ev), blend_weight=float(blend))
+
+if edges.empty:
+    st.warning("No markets scored — nothing to bet.")
+    st.stop()
+
+keep = edges[edges["ev_per_unit"] >= float(min_ev)].copy()
+tiers = keep["signal"].value_counts().to_dict()
+
+s1, s2, s3, s4 = st.columns(4)
+s1.metric("Total flagged", len(keep))
+s2.metric("STRONG", tiers.get("STRONG", 0))
+s3.metric("BUY", tiers.get("BUY", 0))
+s4.metric("MARGINAL", tiers.get("MARGINAL", 0))
+
+st.divider()
+st.subheader("Value bets by fixture")
+
+if keep.empty:
+    st.info("No fixture cleared the EV threshold. Lower the threshold or raise the model weight.")
+else:
+    for (d, k, h, a), grp in keep.groupby(["date", "kickoff", "home", "away"], sort=False):
+        overround = grp["overround_1x2"].iloc[0]
+        or_txt = f"  ·  MWOS 1X2 overround: {overround:+.1%}" if pd.notna(overround) else ""
+        with st.expander(f"**{d}  {k}   {h}  vs  {a}**{or_txt}", expanded=True):
+            display = grp[["market", "mwos_odds", "p_blend", "p_model", "ev_per_unit", "kelly_quarter", "signal"]].copy()
+            display.rename(
+                columns={
+                    "market": "Market",
+                    "mwos_odds": "MWOS",
+                    "p_blend": "p_blend",
+                    "p_model": "p_model",
+                    "ev_per_unit": "EV",
+                    "kelly_quarter": "Kelly/4",
+                    "signal": "Signal",
+                },
+                inplace=True,
+            )
+
+            def _color_row(row):
+                c = _tier_color(row["Signal"])
+                return [f"background-color: {c}22; color: inherit"] * len(row)
+
+            styled = (
+                display.style
+                .apply(_color_row, axis=1)
+                .format({"MWOS": "{:.2f}", "p_blend": "{:.1%}", "p_model": "{:.1%}", "EV": "{:+.2%}", "Kelly/4": "{:.2%}"})
+            )
+            st.dataframe(styled, use_container_width=True, hide_index=True)
+
+st.divider()
+st.subheader("Download full outputs")
+
+report_txt = format_report(edges, min_ev=float(min_ev), blend_weight=float(blend))
+edges_csv = edges.to_csv(index=False).encode("utf-8")
+fx_csv = fx.to_csv(index=False).encode("utf-8")
+
+d1, d2, d3 = st.columns(3)
+d1.download_button("📄 Report (.txt)", data=report_txt, file_name=f"mwos_report_{stamp}.txt", mime="text/plain")
+d2.download_button("📊 Edges (.csv)", data=edges_csv, file_name=f"mwos_edges_{stamp}.csv", mime="text/csv")
+d3.download_button("📅 Fixtures (.csv)", data=fx_csv, file_name=f"mwos_fixtures_{stamp}.csv", mime="text/csv")
+
+try:
+    (OUT_DIR / f"mwos_report_{stamp}.txt").write_text(report_txt, encoding="utf-8")
+    edges.to_csv(OUT_DIR / f"mwos_edges_{stamp}.csv", index=False)
+    fx.to_csv(OUT_DIR / f"mwos_fixtures_{stamp}.csv", index=False)
+except OSError:
+    pass
+
+with st.expander("Text report"):
+    st.code(report_txt, language="text")

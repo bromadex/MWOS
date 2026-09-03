@@ -1,0 +1,7 @@
+# local-only deps needed to refresh the snapshot (precompute.py)
+# these are NOT installed on Streamlit Cloud
+-r requirements.txt
+soccerdata>=1.9
+python-dotenv>=1.0
+cryptography>=42.0
+PyJWT>=2.8
