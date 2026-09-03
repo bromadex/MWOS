@@ -1,6 +1,6 @@
 # MWOS Value-Bet Scanner
 
-A Streamlit web app that reads your daily **MWOS-DAILYFIXTURE PDF** and returns value bets for La Liga fixtures by comparing a statistical model against MWOS's own price.
+A Streamlit web app that reads your daily **MWOS-DAILYFIXTURE PDF** and returns value bets for Spanish football fixtures — La Liga Primera league games plus Copa del Rey / Supercopa cup ties — by comparing a statistical model against MWOS's own price.
 
 **Live:** https://mwos-bet.streamlit.app
 
@@ -16,11 +16,12 @@ It does **not** place bets, does not fund an account, does not connect to any bo
 
 ## What it really does
 
-1. **Parses** the MWOS PDF into fixtures + 10 markets per match.
+1. **Parses** the MWOS PDF into fixtures + 10 markets per match. Recognises any team that has played in La Liga Primera or Segunda in the last decade.
 2. **Predicts** each outcome's probability using a Poisson goals model built from openfootball results + Understat xG.
 3. **De-vigs** the MWOS 1X2 / OU 2.5 / BTTS lines to get the market's own implied probabilities.
 4. **Blends** model and market probabilities (weight adjustable in the sidebar).
 5. **Computes EV** for each market vs. the actual MWOS odds; flags positive-EV bets with quarter-Kelly stake suggestions.
+6. **Flags cup fixtures** where an opponent is not in the model's rating table as ⚪ **UNRATED** — the raw MWOS odds are shown but no EV is trusted.
 
 ---
 
@@ -73,6 +74,8 @@ Blend the two lambda types:
 $$\lambda = 0.70\,\lambda^{xG} + 0.30\,\lambda^{goals}$$
 
 Floored at $0.15$.
+
+**Unrated opponents.** When one team is not in the model's rating table (typical for a lower-division cup side), the app substitutes the neutral fallback $\alpha = \delta = 1.0$ for the missing side so the equations still resolve. The resulting row is tagged UNRATED and its EV is not shown as actionable.
 
 ### 5. Score matrix
 
@@ -128,21 +131,25 @@ Recommended stake = $f^{\star}/4$ (quarter-Kelly). The app shows this as **Kelly
 ## Pipeline
 
 ```
-openfootball JSON  ─┐
-Understat xG        ├─→ team strengths ──→ snapshot/*.json  (committed)
-football-data odds  ─┘
+openfootball es.1 (Primera) + es.2 (Segunda) ─┐
+Understat xG (Primera only)                    ├─→ team strengths + rosters ──→ snapshot/*.json  (committed)
+football-data.co.uk odds (Primera)             ─┘
 
 You upload MWOS PDF
         │
         ▼
-parse fixtures + 10 markets ──→ Poisson score matrix ──→ model probs
-                                                             │
-MWOS line ─── de-vig ──→ market probs ───────────────────────┤
-                                                             ▼
-                                                blend (w=0.35)
-                                                             │
-                                                             ▼
-                                          EV vs MWOS odds ──→ flagged bets
+parse fixtures + 10 markets (filter to Spanish football via known-teams roster)
+        │
+        ├── both teams rated ──→ Poisson score matrix ──→ model probs
+        │                                                      │
+        │       MWOS line ─── de-vig ──→ market probs ─────────┤
+        │                                                      ▼
+        │                                          blend (w=0.35)
+        │                                                      │
+        │                                                      ▼
+        │                                  EV vs MWOS odds ──→ flagged bets
+        │
+        └── unrated opponent → shown separately (UNRATED), no EV computed
 ```
 
 ---
@@ -157,11 +164,11 @@ MWOS line ─── de-vig ──→ market probs ──────────
 
 ### How the website behaves
 
-1. **On load** — reads `snapshot/strengths.json` (7 KB, committed) into memory. Shows four counters at the top: played matches, xG matched, historical odds matched, teams covered, plus the snapshot's generation timestamp.
+1. **On load** — reads the committed snapshot (`strengths.json`, `recent_teams.json`, `known_teams.json`, `meta.json`, ~15 KB total) into memory. Shows four counters at the top: played matches, xG matched, historical odds matched, and **Teams (rated / known)** — the rated count is teams the model can score; the known count is teams the parser will accept from the PDF (Primera + Segunda historical rosters).
 2. **You upload a PDF** — file uploads to the Streamlit server (capped at 20 MB in `.streamlit/config.toml`).
-3. **Parse** (~2 s) — `mwos_pdf.py` scans every line, extracts fixtures whose teams match the recent-top-flight set, and pulls the 10 odds columns.
-4. **Score** (~1 s) — model runs, blends with the de-vigged MWOS line, computes EV and Kelly/4 for every market.
-5. **Render** — table of parsed fixtures, a per-fixture expandable card listing every value-bet market, summary counters (STRONG / BUY / MARGINAL), and download buttons for the CSVs and text report.
+3. **Parse** (~2 s) — `mwos_pdf.py` scans every line, keeps fixtures where both teams are in the known-teams roster (drops other leagues in the PDF), and pulls the 10 odds columns.
+4. **Score** (~1 s) — model runs on rated fixtures; for cup fixtures with an unrated opponent, league-average fallback ratings are used and the row is marked UNRATED. Model + de-vigged MWOS get blended and EV per market is computed.
+5. **Render** — banner if unrated fixtures are present, table of parsed fixtures, summary metrics (Flagged / STRONG / BUY / MARGINAL / Unrated cup), per-fixture expandable cards listing value-bet markets, a dedicated "Unrated cup fixtures" section, and download buttons for the CSVs and text report.
 
 ### What you can adjust on the website
 
@@ -171,12 +178,19 @@ Sidebar controls (all live — sliders re-run the score without re-uploading):
 |---|---|---|---|
 | **Model weight in blend** | 0.00 – 1.00 | 0.35 | Higher = trust model more; lower = anchor to market. Backtest optimum was ≈ 0.00, so lower (0.10–0.25) is safer. |
 | **Minimum EV per unit** | 0.00 – 0.20 | 0.02 | Threshold to flag as a bet. Raise to 0.05 to see only serious edges. |
-| **Min recent matches per team (2y)** | 5 – 40 | 12 | Fixtures where either team has fewer matches than this in the last two years are skipped (filters out stale ratings for recently promoted/relegated teams). |
+| **Min recent matches per team (2y)** | 5 – 40 | 12 | Filter applied when *computing* the "recent top-flight" set inside `precompute.py`. On the deployed app this control is stored but the effective rated set is baked into the snapshot; change it and re-run `precompute.py` locally to take effect. |
 
-Signals rendered per market:
-- 🟢 **STRONG** — EV ≥ 8%
-- 🔵 **BUY** — EV ≥ 4%
-- 🟡 **MARGINAL** — EV ≥ min-EV slider
+### Signal tiers
+
+| Badge | Meaning | Trigger |
+|---|---|---|
+| 🟢 **STRONG** | Big EV, both teams rated | EV ≥ 8% and both teams in ratings |
+| 🔵 **BUY** | Solid EV, both teams rated | 4% ≤ EV < 8% and both teams in ratings |
+| 🟡 **MARGINAL** | Small EV, both teams rated | min-EV ≤ EV < 4% and both teams in ratings |
+| ⚪ **UNRATED** | Cup fixture with a team the model can't score | Either team missing from the ratings table |
+| ⚪ **SKIP** | Below min-EV threshold | Not shown in the value-bet list |
+
+Never treat an UNRATED row's EV number as real. It's only there so the market for that fixture is visible.
 
 ---
 
@@ -195,28 +209,31 @@ Walk-forward, 5 folds over 5,310 La Liga matches (2,806 with market data):
 
 The model beats the naïve baseline by ~6% log-loss but is ~3% behind Pinnacle. Since MWOS's overround is 4%–11%, the model is not a guaranteed money-maker against MWOS. Use it as a screening / disagreement flag, not a black box. Backtest is reproducible via `python main.py backtest`.
 
+Cup / UNRATED fixtures are not in the backtest because there's no equivalent historical market baseline for them.
+
 ---
 
 ## Repo layout
 
 ```
 webapp.py              Streamlit entry point (Cloud)
-snapshot_loader.py     loads precomputed team strengths
-snapshot/              committed model state (~8 KB total)
-  strengths.json         per-team attack/defense multipliers
-  recent_teams.json      teams with enough recent top-flight data
+snapshot_loader.py     loads precomputed team strengths + rosters
+snapshot/              committed model state (~15 KB total)
+  strengths.json         per-team attack/defense multipliers        (rated ~34 teams)
+  recent_teams.json      teams with enough recent top-flight data    (~23 teams)
+  known_teams.json       Primera + Segunda historical roster         (~71 teams)
   meta.json              generation timestamp + counts
 
 config.py              constants (half-life, blend weight, floors)
 ratings.py             recency-decayed, shrunk team strengths
 model.py               Poisson + Dixon-Coles score matrix
 mwos_pdf.py            PDF → fixtures + odds
-mwos_edges.py          de-vig + blend + EV
+mwos_edges.py          de-vig + blend + EV (with UNRATED fallback)
 backtest.py            walk-forward log-loss vs Pinnacle
 
-data.py                openfootball + Understat + odds joins  (LOCAL only)
-odds_history.py        football-data.co.uk fetcher            (LOCAL only)
-precompute.py          rebuilds the snapshot                  (LOCAL only)
+data.py                openfootball es.1 + es.2 + Understat + odds joins  (LOCAL only)
+odds_history.py        football-data.co.uk fetcher                        (LOCAL only)
+precompute.py          rebuilds the snapshot                              (LOCAL only)
 
 main.py                CLI (predict, backtest, mwos, daily)
 run_web.bat            local Streamlit launcher
@@ -238,7 +255,7 @@ git commit -m "refresh snapshot"
 git push                     # Streamlit Cloud redeploys automatically
 ```
 
-`precompute.py` needs `requirements-dev.txt` (includes `soccerdata`, which drives a headless Chrome). Streamlit Cloud never runs it — the cloud instance only reads the committed `snapshot/`.
+`precompute.py` needs `requirements-dev.txt` (includes `soccerdata`, which drives a headless Chrome). Streamlit Cloud never runs it — the cloud instance only reads the committed `snapshot/`. Refreshing also updates `known_teams.json`, so newly promoted / relegated clubs are picked up automatically.
 
 ---
 
@@ -252,10 +269,11 @@ git push                     # Streamlit Cloud redeploys automatically
 
 ## Limitations and caveats
 
-- **La Liga Primera ratings only.** The model has full attack/defense ratings for teams that have played recent Primera football. Cup fixtures (Copa del Rey, Supercopa) featuring lower-division opponents are still parsed and shown, but flagged ⚪ **UNRATED** — the app falls back to league-average multipliers for the missing side so you can see the market but not the EV. Do not stake on UNRATED rows.
+- **Ratings are Primera-quality only.** The model has full attack/defense ratings for teams that have played recent Primera football. Cup fixtures (Copa del Rey, Supercopa) featuring lower-division opponents are still parsed and shown, but flagged ⚪ **UNRATED** — the app falls back to league-average multipliers for the missing side so you can see the market but not the EV. Do not stake on UNRATED rows.
 - **No injuries, lineups, weather, ref, motivation, or travel.** The closing line encodes all of these; the model does not.
 - **No live/in-play.** The PDF is a snapshot; odds move.
-- **Understat xG needs Chrome.** Only runs during local `precompute.py`, never on Cloud.
+- **Understat xG only covers Primera.** Segunda teams that later appear as cup opponents have no xG history. Rated Primera clubs playing in cups still get their full ratings from Understat + goals.
+- **Understat needs Chrome.** Only runs during local `precompute.py`, never on Cloud.
 - **Model log-loss is ~3% behind Pinnacle closing.** Do not bet blindly.
 - **Bookmaker limits.** Any bookmaker (MWOS included) will restrict or ban winning accounts. Model edge is not a licence to size aggressively.
 
