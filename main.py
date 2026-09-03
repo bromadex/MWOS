@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pandas as pd
 
 from backtest import naive_baselines, walk_forward
 from config import MODEL_BLEND_WEIGHT, MWOS_INBOX, OUT_DIR
-from data import build_matches, normalize_team, split_completed_upcoming
-from edges import compute_edge
-from kalshi import KalshiClient, market_yes_price
+from data import build_matches, split_completed_upcoming
 from model import predict_fixture
 from mwos_edges import compute_market_edges, format_report
 from mwos_pdf import parse_pdf
@@ -76,73 +72,6 @@ def cmd_backtest(args):
     with pd.option_context("display.width", 200, "display.max_columns", None):
         print(res.to_string(index=False))
     res.to_csv(OUT_DIR / "backtest.csv", index=False)
-
-
-def cmd_edges(args):
-    print("loading data + fitting strengths...")
-    df = build_matches()
-    played, upcoming = split_completed_upcoming(df)
-    strengths = compute_team_strengths(played)
-
-    print("connecting to kalshi...")
-    kc = KalshiClient()
-    if args.series:
-        events = kc.list_events(series_ticker=args.series)
-    else:
-        events = kc.list_events()
-    print(f"found {len(events)} open events")
-
-    rows = []
-    for ev in events:
-        title = ev.get("title", "")
-        home_hint, away_hint = _guess_teams_from_title(title)
-        if not (home_hint and away_hint):
-            continue
-
-        home = normalize_team(home_hint)
-        away = normalize_team(away_hint)
-        if home not in strengths["teams"] or away not in strengths["teams"]:
-            continue
-
-        try:
-            pred = predict_fixture(home, away, strengths)
-        except KeyError:
-            continue
-
-        markets = kc.list_markets(event_ticker=ev["event_ticker"])
-        home_market = _pick_home_yes_market(markets, home_hint)
-        if not home_market:
-            continue
-
-        try:
-            ob = kc.get_orderbook(home_market["ticker"])
-        except Exception:
-            ob = {}
-        yes_price = market_yes_price(home_market, ob)
-        if yes_price is None:
-            continue
-
-        e = compute_edge(pred["p_home"], yes_price)
-        rows.append(
-            {
-                "event": title,
-                "ticker": home_market["ticker"],
-                "home": home,
-                "away": away,
-                "model_p_home": pred["p_home"],
-                **e,
-            }
-        )
-
-    if not rows:
-        print("no matching markets with usable prices")
-        return
-
-    out = pd.DataFrame(rows).sort_values("best_edge", ascending=False)
-    dest = OUT_DIR / "edges.csv"
-    out.to_csv(dest, index=False)
-    print(f"\nsaved {len(out)} rows -> {dest}")
-    print(out.to_string(index=False))
 
 
 def _latest_inbox_pdf() -> str | None:
@@ -219,29 +148,8 @@ def cmd_daily(args):
     )
 
 
-def _guess_teams_from_title(title: str):
-    for sep in [" vs. ", " vs ", " v ", " @ ", " - "]:
-        if sep in title:
-            parts = title.split(sep, 1)
-            if len(parts) == 2:
-                return parts[0].strip(), parts[1].strip()
-    return None, None
-
-
-def _pick_home_yes_market(markets: list, home_hint: str):
-    if not markets:
-        return None
-    lower = home_hint.lower()
-    for m in markets:
-        yes_sub = (m.get("yes_sub_title") or "").lower()
-        title = (m.get("title") or "").lower()
-        if lower in yes_sub or lower in title:
-            return m
-    return markets[0]
-
-
 def build_parser():
-    p = argparse.ArgumentParser(description="La Liga xG Poisson model with Kalshi edges")
+    p = argparse.ArgumentParser(description="La Liga xG Poisson model + MWOS value bets")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pp = sub.add_parser("predict", help="run model on upcoming fixtures")
@@ -253,10 +161,6 @@ def build_parser():
     bp.add_argument("--blend-weights", type=float, nargs="+", default=[1.0, 0.75, 0.5, 0.25, 0.0])
     bp.add_argument("--folds", type=int, default=5)
     bp.set_defaults(func=cmd_backtest)
-
-    ep = sub.add_parser("edges", help="fetch kalshi prices and compute edges")
-    ep.add_argument("--series", type=str, default=None, help="Kalshi series_ticker filter (e.g. KXLALIGA)")
-    ep.set_defaults(func=cmd_edges)
 
     mp = sub.add_parser("mwos", help="parse a specific MWOS daily PDF and compute value bets")
     mp.add_argument("pdf", type=str, help="path to MWOS-DAILYFIXTURE PDF")

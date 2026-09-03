@@ -1,4 +1,4 @@
-# kalshi_football
+# MWOS Value-Bet Scanner
 
 La Liga Poisson + xG + Dixon-Coles model with a Streamlit web app that scores value bets from an uploaded MWOS-DAILYFIXTURE PDF.
 

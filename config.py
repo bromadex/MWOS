@@ -23,10 +23,6 @@ XG_LAMBDA_WEIGHT = 0.70
 MIN_EXPECTED_GOALS = 0.15
 SCORE_MATRIX_MAX_GOALS = 12
 
-KALSHI_FEE_RATE = 0.07
-MIN_EDGE_STRONG = 0.05
-MIN_EDGE_BUY = 0.02
-
 MIN_RECENT_MATCHES = 12
 RECENT_WINDOW_DAYS = 730
 
@@ -36,8 +32,3 @@ try:
     MWOS_INBOX.mkdir(exist_ok=True)
 except OSError:
     pass
-
-KALSHI_BASE = {
-    "demo": "https://demo-api.kalshi.co/trade-api/v2",
-    "prod": "https://api.elections.kalshi.com/trade-api/v2",
-}
