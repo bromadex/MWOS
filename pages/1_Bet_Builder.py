@@ -45,19 +45,21 @@ with st.sidebar:
         "Min odds per leg",
         min_value=1.05,
         max_value=2.50,
-        value=1.30,
+        value=1.20,
         step=0.05,
         help="Higher min odds = fewer picks but more cushion per winner. "
              "At min_odds=1.25, any 8/10 winning combo guarantees break-even.",
     )
-    min_model_prob = st.slider(
-        "Min model probability per leg",
-        min_value=0.50,
+    min_prob = st.slider(
+        "Min blended probability per leg",
+        min_value=0.40,
         max_value=0.90,
-        value=0.60,
+        value=0.50,
         step=0.05,
-        help="Filters out speculative underdog bets. A leg with model prob 0.75 "
-             "and odds 1.60 is the sweet spot for the singles strategy.",
+        help="The blended (model + market) probability. Filters out speculative "
+             "picks so 'the model just disagreed with the market on an underdog' "
+             "doesn't sneak onto the singles slip. 0.50 = coin-flip favorite or "
+             "better; 0.70 = strong favorite.",
     )
     one_per_fixture = st.checkbox(
         "One leg per fixture (avoids correlated bets)",
@@ -69,16 +71,24 @@ port = build_singles_portfolio(
     edges,
     max_bets=int(max_bets),
     min_odds=float(min_odds),
-    min_model_prob=float(min_model_prob),
+    min_model_prob=float(min_prob),
     one_per_fixture=bool(one_per_fixture),
 )
 
 if port.empty:
     st.warning(
         "No legs cleared the filters. Try lowering **Min odds** or "
-        "**Min model probability**, or upload today's PDF on the Scanner first."
+        "**Min blended probability**, or upload today's PDF on the Scanner first."
     )
     st.stop()
+
+if len(port) < int(max_bets):
+    st.info(
+        f"Only **{len(port)}** legs cleared your filters "
+        f"(you asked for up to {int(max_bets)}). Loosen **Min odds** or "
+        f"**Min blended probability** in the sidebar to include more picks, "
+        f"or accept the smaller slip — the portfolio math re-runs against N = {len(port)}."
+    )
 
 stats = portfolio_stats(port, stake=float(stake))
 n = stats["n"]
