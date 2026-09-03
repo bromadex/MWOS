@@ -182,7 +182,7 @@ parse fixtures + 10 markets (filter to Spanish football via known-teams roster)
 The app is a **multi-page Streamlit app** (files under `pages/` become separate pages in the left nav):
 
 1. **⚽ Scanner** (`webapp.py`) — the default page. Upload the daily MWOS PDF, get every value bet flagged per fixture.
-2. **🎯 Bet Builder** (`pages/1_🎯_Bet_Builder.py`) — takes the Scanner's flagged edges and builds a $1-per-leg singles slip. Filters by min odds + min model probability, then computes the full portfolio distribution: expected P/L, standard deviation, Poisson-binomial P(k wins), worst-case P/L per k, and a "safe on k/N hits" verdict. Designed for the classic *"if I win 8 of 10, do I break even?"* question.
+2. **🎯 Bet Builder** (`pages/1_Bet_Builder.py`) — takes the Scanner's flagged edges and builds a $1-per-leg singles slip. Filters by min odds + min model probability, then computes the full portfolio distribution: expected P/L, standard deviation, Poisson-binomial P(k wins), worst-case P/L per k, and a "safe on k/N hits" verdict. Designed for the classic *"if I win 8 of 10, do I break even?"* question.
 
 ### How the website behaves
 
@@ -240,7 +240,7 @@ Cup / UNRATED fixtures are not in the backtest because there's no equivalent his
 ```
 webapp.py              Streamlit entry point — Scanner page (Cloud)
 pages/                 Streamlit auto-picks these up as extra pages
-  1_🎯_Bet_Builder.py    singles-portfolio construction + stats
+  1_Bet_Builder.py       singles-portfolio construction + stats
 portfolio.py           slip selection + Poisson-binomial P/L distribution
 snapshot_loader.py     loads precomputed team strengths + rosters
 snapshot/              committed model state (~30 KB total)
