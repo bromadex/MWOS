@@ -7,7 +7,7 @@ import pandas as pd
 
 from backtest import naive_baselines, walk_forward
 from config import MODEL_BLEND_WEIGHT, MWOS_INBOX, OUT_DIR
-from data import build_matches, split_completed_upcoming
+from data import all_spanish_team_names, build_matches, split_completed_upcoming
 from model import predict_fixture
 from mwos_edges import compute_market_edges, format_report
 from mwos_pdf import parse_pdf
@@ -92,9 +92,12 @@ def _run_mwos(pdf_path: str, min_ev: float, min_recent: int, window_days: int, b
     print("[2/4] computing team strengths...")
     strengths = compute_team_strengths(played)
 
+    from config import CURRENT_SEASON
+    known_teams = all_spanish_team_names(range(2012, CURRENT_SEASON + 1))
+
     print(f"[3/4] parsing {pdf_path}...")
-    fx = parse_pdf(pdf_path, recent_teams)
-    print(f"      parsed {len(fx)} fixtures with both teams recently in top flight")
+    fx = parse_pdf(pdf_path, known_teams)
+    print(f"      parsed {len(fx)} Spanish football fixtures (Primera + Segunda + cup)")
     if fx.empty:
         print("no fixtures matched; nothing to compute")
         return

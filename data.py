@@ -24,10 +24,11 @@ def _season_slug(year: int) -> str:
     return f"{year}-{str(year + 1)[-2:]}"
 
 
-def _fetch_openfootball_season(year: int) -> pd.DataFrame:
+def _fetch_openfootball_season(year: int, division: str = "es.1") -> pd.DataFrame:
     slug = _season_slug(year)
-    url = f"{OPENFOOTBALL_REPO}/{slug}/es.1.json"
-    cache = DATA_DIR / f"of_{slug}.json"
+    url = f"{OPENFOOTBALL_REPO}/{slug}/{division}.json"
+    div_tag = division.replace(".", "")
+    cache = DATA_DIR / f"of_{div_tag}_{slug}.json" if division != "es.1" else DATA_DIR / f"of_{slug}.json"
     if cache.exists():
         raw = json.loads(cache.read_text(encoding="utf-8"))
     else:
@@ -77,6 +78,24 @@ def fetch_openfootball(seasons: range) -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
+
+
+def all_spanish_team_names(seasons: range) -> set[str]:
+    """
+    Union of every team name that has appeared in La Liga Primera (es.1) or
+    La Liga Segunda (es.2) in the given seasons, normalised. Used to widen the
+    MWOS PDF parser so cup fixtures (Copa del Rey, Supercopa) involving Segunda
+    opponents aren't silently dropped.
+    """
+    names: set[str] = set()
+    for div in ("es.1", "es.2"):
+        for y in seasons:
+            df = _fetch_openfootball_season(y, division=div)
+            if df.empty:
+                continue
+            names.update(df["home"].dropna().map(normalize_team).unique())
+            names.update(df["away"].dropna().map(normalize_team).unique())
+    return {n for n in names if isinstance(n, str) and n}
 
 
 def _understat_season_labels(seasons: range) -> list[str]:

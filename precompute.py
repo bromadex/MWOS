@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import ROOT
-from data import build_matches, split_completed_upcoming
+from config import CURRENT_SEASON, ROOT
+from data import all_spanish_team_names, build_matches, split_completed_upcoming
 from ratings import compute_team_strengths, recent_top_flight_teams
 
 SNAPSHOT_DIR = ROOT / "snapshot"
@@ -54,16 +54,22 @@ def main() -> None:
     print("[precompute] computing recent-top-flight team set...")
     recent = sorted(recent_top_flight_teams(played))
 
+    print("[precompute] fetching wider Spanish team roster (es.1 + es.2)...")
+    wider = sorted(all_spanish_team_names(range(2012, CURRENT_SEASON + 1)))
+
     meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "played_matches": len(played),
         "xg_matched": xg_matched,
         "market_odds_matched": mkt_matched,
-        "n_teams": len(strengths_out["teams"]),
+        "n_teams_rated": len(strengths_out["teams"]),
+        "n_teams_recent": len(recent),
+        "n_teams_known": len(wider),
     }
 
     (SNAPSHOT_DIR / "strengths.json").write_text(json.dumps(strengths_out, indent=2), encoding="utf-8")
     (SNAPSHOT_DIR / "recent_teams.json").write_text(json.dumps(recent, indent=2), encoding="utf-8")
+    (SNAPSHOT_DIR / "known_teams.json").write_text(json.dumps(wider, indent=2), encoding="utf-8")
     (SNAPSHOT_DIR / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     print(f"[precompute] wrote snapshot -> {SNAPSHOT_DIR}")

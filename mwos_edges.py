@@ -41,6 +41,30 @@ def _blend(p_model: float, p_market: float | None, w: float) -> float:
     return w * p_model + (1 - w) * p_market
 
 
+_FALLBACK = {
+    "att_g": 1.0, "def_g": 1.0, "att_xg": 1.0, "def_xg": 1.0, "matches_eff": 0.0,
+}
+
+
+def _ensure_teams(strengths: dict, home: str, away: str) -> tuple[dict, bool, bool]:
+    """Return (strengths_with_fallbacks, home_rated, away_rated).
+    Injects a league-average fallback for any team missing from the rating table
+    so unrated cup opponents (Copa del Rey, Supercopa) still get scored — but
+    the caller can flag the row so the number isn't taken at face value."""
+    teams = dict(strengths["teams"])
+    home_rated = home in teams
+    away_rated = away in teams
+    if not home_rated:
+        teams[home] = dict(_FALLBACK)
+    if not away_rated:
+        teams[away] = dict(_FALLBACK)
+    if home_rated and away_rated:
+        return strengths, True, True
+    patched = dict(strengths)
+    patched["teams"] = teams
+    return patched, home_rated, away_rated
+
+
 def compute_market_edges(
     fx: pd.DataFrame,
     strengths: dict,
@@ -50,14 +74,17 @@ def compute_market_edges(
     """
     For each parsed MWOS fixture, run the model, blend with de-vigged MWOS odds,
     and compute EV against MWOS's actual price. Rows returned only where MWOS
-    quoted a usable price.
+    quoted a usable price. Fixtures where one or both teams have no rating
+    (e.g. Copa del Rey vs. a Segunda side) still appear, marked UNRATED.
     """
     rows = []
     for _, r in fx.iterrows():
+        patched, home_rated, away_rated = _ensure_teams(strengths, r["home"], r["away"])
         try:
-            pred = predict_fixture(r["home"], r["away"], strengths)
+            pred = predict_fixture(r["home"], r["away"], patched)
         except KeyError:
             continue
+        both_rated = home_rated and away_rated
 
         p_h_m, p_d_m, p_a_m = pred["p_home"], pred["p_draw"], pred["p_away"]
         p_o_m = pred["over_2_5"]
@@ -116,6 +143,9 @@ def compute_market_edges(
                     "kelly_full": round(_kelly(p_blend, dec_odds), 4),
                     "kelly_quarter": round(_kelly(p_blend, dec_odds) * 0.25, 4),
                     "overround_1x2": round(overround_1x2, 4) if overround_1x2 is not None else None,
+                    "home_rated": home_rated,
+                    "away_rated": away_rated,
+                    "both_rated": both_rated,
                 }
             )
 
@@ -123,7 +153,10 @@ def compute_market_edges(
     if df.empty:
         return df
 
-    def _tier(e: float) -> str:
+    def _tier(row) -> str:
+        if not row["both_rated"]:
+            return "UNRATED"
+        e = row["ev_per_unit"]
         if e >= 0.08:
             return "STRONG"
         if e >= 0.04:
@@ -132,7 +165,7 @@ def compute_market_edges(
             return "MARGINAL"
         return "SKIP"
 
-    df["signal"] = df["ev_per_unit"].apply(_tier)
+    df["signal"] = df.apply(_tier, axis=1)
     df = df.sort_values(["date", "kickoff", "home", "ev_per_unit"], ascending=[True, True, True, False]).reset_index(drop=True)
     return df
 
@@ -146,7 +179,8 @@ def format_report(edges: pd.DataFrame, min_ev: float = 0.02, blend_weight: float
     lines.append(f"MWOS DAILY VALUE-BET REPORT   (blend w_model = {blend_weight:.2f}, min EV = {min_ev:+.1%})")
     lines.append("=" * 88)
 
-    keep = edges[edges["ev_per_unit"] >= min_ev].copy()
+    keep = edges[(edges["ev_per_unit"] >= min_ev) & (edges["both_rated"])].copy()
+    unrated = edges[~edges["both_rated"]].drop_duplicates(subset=["date", "kickoff", "home", "away"])
     if keep.empty:
         lines.append("no bets clear the min EV threshold today.")
         lines.append("")
@@ -178,5 +212,17 @@ def format_report(edges: pd.DataFrame, min_ev: float = 0.02, blend_weight: float
     marginal = keep[keep["signal"] == "MARGINAL"]
     lines.append(f"summary: {len(strong)} STRONG, {len(buy)} BUY, {len(marginal)} MARGINAL")
     lines.append("staking guide: use KELLY/4 as the fraction of bankroll per bet. never chase.")
+
+    if len(unrated):
+        lines.append("")
+        lines.append(f"unrated cup fixtures ({len(unrated)}) — model can't score confidently:")
+        for _, u in unrated.iterrows():
+            miss = []
+            if not u["home_rated"]:
+                miss.append(u["home"])
+            if not u["away_rated"]:
+                miss.append(u["away"])
+            lines.append(f"  {u['date']} {u['kickoff']}  {u['home']} vs {u['away']}   [no rating: {', '.join(miss)}]")
+
     lines.append("")
     return "\n".join(lines) + "\n"

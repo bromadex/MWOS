@@ -10,9 +10,10 @@ from config import ROOT
 SNAPSHOT_DIR = ROOT / "snapshot"
 
 
-def load_snapshot() -> tuple[dict, set[str], dict] | None:
+def load_snapshot() -> tuple[dict, set[str], set[str], dict] | None:
     s_path = SNAPSHOT_DIR / "strengths.json"
     r_path = SNAPSHOT_DIR / "recent_teams.json"
+    k_path = SNAPSHOT_DIR / "known_teams.json"
     m_path = SNAPSHOT_DIR / "meta.json"
     if not (s_path.exists() and r_path.exists()):
         return None
@@ -25,5 +26,6 @@ def load_snapshot() -> tuple[dict, set[str], dict] | None:
             pass
 
     recent_teams = set(json.loads(r_path.read_text(encoding="utf-8")))
+    known_teams = set(json.loads(k_path.read_text(encoding="utf-8"))) if k_path.exists() else set(recent_teams)
     meta = json.loads(m_path.read_text(encoding="utf-8")) if m_path.exists() else {}
-    return strengths, recent_teams, meta
+    return strengths, recent_teams, known_teams, meta

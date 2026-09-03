@@ -252,7 +252,7 @@ git push                     # Streamlit Cloud redeploys automatically
 
 ## Limitations and caveats
 
-- **La Liga Primera only.** Fixtures involving lower-division teams are silently skipped.
+- **La Liga Primera ratings only.** The model has full attack/defense ratings for teams that have played recent Primera football. Cup fixtures (Copa del Rey, Supercopa) featuring lower-division opponents are still parsed and shown, but flagged ⚪ **UNRATED** — the app falls back to league-average multipliers for the missing side so you can see the market but not the EV. Do not stake on UNRATED rows.
 - **No injuries, lineups, weather, ref, motivation, or travel.** The closing line encodes all of these; the model does not.
 - **No live/in-play.** The PDF is a snapshot; odds move.
 - **Understat xG needs Chrome.** Only runs during local `precompute.py`, never on Cloud.

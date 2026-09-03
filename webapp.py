@@ -23,25 +23,29 @@ st.set_page_config(
 def _load_context():
     snap = load_snapshot()
     if snap is not None:
-        strengths, recent_teams, meta = snap
-        return strengths, recent_teams, meta, "snapshot"
+        strengths, recent_teams, known_teams, meta = snap
+        return strengths, recent_teams, known_teams, meta, "snapshot"
 
-    from data import build_matches, split_completed_upcoming
+    from data import all_spanish_team_names, build_matches, split_completed_upcoming
     from ratings import compute_team_strengths, recent_top_flight_teams
+    from config import CURRENT_SEASON
 
     df = build_matches()
     played, _ = split_completed_upcoming(df)
     strengths = compute_team_strengths(played)
     recent_teams = recent_top_flight_teams(played)
+    known_teams = all_spanish_team_names(range(2012, CURRENT_SEASON + 1))
     xg_matched = int(played["home_xg"].notna().sum()) if "home_xg" in played.columns else 0
     mkt_matched = int(played["mkt_p_h"].notna().sum()) if "mkt_p_h" in played.columns else 0
     meta = {
         "played_matches": len(played),
         "xg_matched": xg_matched,
         "market_odds_matched": mkt_matched,
-        "n_teams": len(strengths["teams"]),
+        "n_teams_rated": len(strengths["teams"]),
+        "n_teams_recent": len(recent_teams),
+        "n_teams_known": len(known_teams),
     }
-    return strengths, recent_teams, meta, "live"
+    return strengths, recent_teams, known_teams, meta, "live"
 
 
 def _tier_color(sig: str) -> str:
@@ -78,13 +82,16 @@ with st.sidebar:
     st.divider()
     st.caption("Kelly/4 stake = quarter-Kelly. Multiply by bankroll to size each bet.")
 
-strengths, recent_teams_snapshot, meta, mode = _load_context()
+strengths, recent_teams_snapshot, known_teams_snapshot, meta, mode = _load_context()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Played matches", f"{meta.get('played_matches', 0):,}")
 c2.metric("xG matched", f"{meta.get('xg_matched', 0):,}")
 c3.metric("Historical odds matched", f"{meta.get('market_odds_matched', 0):,}")
-c4.metric("Teams", meta.get("n_teams", 0))
+c4.metric(
+    "Teams (rated / known)",
+    f"{meta.get('n_teams_rated', meta.get('n_teams', 0))} / {meta.get('n_teams_known', 0)}",
+)
 if mode == "snapshot" and "generated_at" in meta:
     st.caption(f"Data snapshot generated at {meta['generated_at']} UTC. Run `python precompute.py` locally to refresh.")
 else:
@@ -112,14 +119,21 @@ except OSError:
     pdf_dest.write_bytes(uploaded.getvalue())
 st.success(f"Received {uploaded.name}")
 
-recent_teams = recent_teams_snapshot
+parser_teams = known_teams_snapshot if known_teams_snapshot else recent_teams_snapshot
 
-with st.spinner("Parsing PDF and matching La Liga fixtures…"):
-    fx = parse_pdf(str(pdf_dest), recent_teams)
+with st.spinner("Parsing PDF and matching Spanish football fixtures…"):
+    fx = parse_pdf(str(pdf_dest), parser_teams)
 
 if fx.empty:
-    st.warning("No La Liga fixtures with recognised teams were found in this PDF.")
+    st.warning("No Spanish football fixtures with recognised teams were found in this PDF.")
     st.stop()
+
+n_unrated_fx = 0
+if not fx.empty:
+    rated_set = set(strengths["teams"].keys())
+    n_unrated_fx = int(sum(1 for _, r in fx.iterrows() if r["home"] not in rated_set or r["away"] not in rated_set))
+    if n_unrated_fx:
+        st.info(f"{n_unrated_fx} cup fixture(s) involve a team the model has no rating for. They'll appear flagged ⚪ UNRATED — treat those numbers with extra care.")
 
 st.subheader(f"Parsed fixtures ({len(fx)})")
 st.dataframe(
@@ -136,14 +150,17 @@ if edges.empty:
     st.warning("No markets scored — nothing to bet.")
     st.stop()
 
-keep = edges[edges["ev_per_unit"] >= float(min_ev)].copy()
+rated_edges = edges[edges["both_rated"]].copy()
+unrated_edges = edges[~edges["both_rated"]].copy()
+keep = rated_edges[rated_edges["ev_per_unit"] >= float(min_ev)].copy()
 tiers = keep["signal"].value_counts().to_dict()
 
-s1, s2, s3, s4 = st.columns(4)
-s1.metric("Total flagged", len(keep))
+s1, s2, s3, s4, s5 = st.columns(5)
+s1.metric("Flagged (rated)", len(keep))
 s2.metric("STRONG", tiers.get("STRONG", 0))
 s3.metric("BUY", tiers.get("BUY", 0))
 s4.metric("MARGINAL", tiers.get("MARGINAL", 0))
+s5.metric("Unrated cup", unrated_edges.drop_duplicates(["date", "kickoff", "home", "away"]).shape[0])
 
 st.divider()
 st.subheader("Value bets by fixture")
@@ -151,7 +168,7 @@ st.subheader("Value bets by fixture")
 if keep.empty:
     st.info("No fixture cleared the EV threshold. Lower the threshold or raise the model weight.")
 else:
-    _tier_icon = {"STRONG": "🟢 STRONG", "BUY": "🔵 BUY", "MARGINAL": "🟡 MARGINAL", "SKIP": "⚪ SKIP"}
+    _tier_icon = {"STRONG": "🟢 STRONG", "BUY": "🔵 BUY", "MARGINAL": "🟡 MARGINAL", "SKIP": "⚪ SKIP", "UNRATED": "⚪ UNRATED"}
 
     for (d, k, h, a), grp in keep.groupby(["date", "kickoff", "home", "away"], sort=False):
         overround = grp["overround_1x2"].iloc[0]
@@ -166,6 +183,21 @@ else:
             display["signal"] = display["signal"].map(lambda s: _tier_icon.get(s, s))
             display.columns = ["Market", "MWOS", "p_blend", "p_model", "EV", "Kelly/4", "Signal"]
             st.dataframe(display, use_container_width=True, hide_index=True)
+
+if not unrated_edges.empty:
+    st.divider()
+    st.subheader("Unrated cup fixtures")
+    st.caption("Model has no rating for one or both teams (typical for Copa del Rey / Supercopa vs. a lower-division side). The raw MWOS odds are shown so you can still see the market, but no EV is trusted.")
+    fixtures_view = unrated_edges.drop_duplicates(["date", "kickoff", "home", "away"])[
+        ["date", "kickoff", "home", "away", "home_rated", "away_rated"]
+    ].copy()
+    fixtures_view["home"] = fixtures_view.apply(lambda r: f"{r['home']}" + ("" if r["home_rated"] else "  ⚠️"), axis=1)
+    fixtures_view["away"] = fixtures_view.apply(lambda r: f"{r['away']}" + ("" if r["away_rated"] else "  ⚠️"), axis=1)
+    st.dataframe(
+        fixtures_view[["date", "kickoff", "home", "away"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.divider()
 st.subheader("Download full outputs")
